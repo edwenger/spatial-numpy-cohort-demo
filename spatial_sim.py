@@ -129,4 +129,10 @@ if __name__ == "__main__":
 
     ani = animation.FuncAnimation(fig, animate, frames=states.shape[0]-1, interval=50, blit=False)
 
+    # To save the animation using Pillow as a gif
+    # writer = animation.PillowWriter(fps=15,
+    #                                 metadata=dict(artist='Me'),
+    #                                 bitrate=1800)
+    # ani.save('figures/ew_spatial_animation.gif', writer=writer)
+
     plt.show()
