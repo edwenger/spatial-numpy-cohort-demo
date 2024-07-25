@@ -78,61 +78,62 @@ if __name__ == "__main__":
     from settlements import parse_settlements
     settlements_df = parse_settlements()
 
+    settlements_slice = slice(None, None)  # all settlements
+    # settlements_slice = slice(None, 20)  # only biggest N
+    # settlements_slice = slice(400, None)  # exclude biggest N
+
     biweek_steps = 26 * 20
-    params = Params(beta=32, seasonality=0.15, demog_scale=1.0,
-                    mixing_scale=0.001, distance_exponent=1.5)
+    params = Params(
+         beta=32, seasonality=0.16, demog_scale=1.0, 
+         mixing_scale=0.002, distance_exponent=1.5)
     print(params)
 
-    n_settlements = None
-    init_state = init_state(settlements_df.iloc[:n_settlements, :], params)
+    init_state = init_state(settlements_df.iloc[settlements_slice, :], params)
     states = simulate(init_state, params, n_steps=biweek_steps)
 
     # --------
 
-    presence_tsteps = (states[:, :, 1] > 0).sum(axis=0)
-    plt.scatter(settlements_df.population[:n_settlements], presence_tsteps / 26.)
-    ax = plt.gca()
-    ax.set(xscale='log', xlabel='population', ylabel='years with infections present')
+    # presence_tsteps = (states[:, :, 1] > 0).sum(axis=0)
+    # plt.scatter(settlements_df.population[settlements_slice], presence_tsteps / 26.)
+    # ax = plt.gca()
+    # ax.set(xscale='log', xlabel='population', ylabel='years with infections present')
 
     # --------
 
-    # test_ix = 800  # a smaller village to see some extinction + reintroduction dynamics
+    # test_ix = 5  # a large city to see some endemic dynamics
+    # # test_ix = 200  # a medium city to see some extinction dynamics + frequent reintroductions
+    # # test_ix = 800  # a smaller village to see some extinction + random reintroduction dynamics
     # print(settlements_df.iloc[test_ix])
     # test_states = states[:, test_ix, :]  # (time, location, SIR)
 
-    # from plotting import plot_timeseries, plot_wavelet_spectrum
+    # from plotting import plot_timeseries
     # plot_timeseries(test_states)
+    # from wavelet import plot_wavelet_spectrum
     # plot_wavelet_spectrum(test_states[:, 1])  # infecteds
 
     # --------
 
     # TODO: Something like https://www.nature.com/articles/414716a#Sec4 and/or Xia et al. (2004)
+    # https://github.com/krosenfeld-IDM/sandbox-botorch/blob/main/laser/london/analyze.py#L68
+
+    from wavelet import get_phase_diffs
+    from mixing import pairwise_haversine
+    ref_name = "London"
+    sdf = settlements_df.iloc[settlements_slice, :]
+    ref_ix = sdf.index.get_loc(ref_name)
+    phase_diffs = get_phase_diffs(states[:, :, 1], ref_ix)
+    distances_km = pairwise_haversine(sdf)[ref_ix]
+    fig, ax = plt.subplots()
+    ax.scatter(distances_km, phase_diffs, s=0.1*np.sqrt(sdf.population), alpha=0.4, c='gray')
+    ax.set(xlabel="distance from %s (km)" % ref_name, ylabel="phase difference (radians)")
 
     # --------
 
-    import matplotlib.animation as animation
-    from matplotlib.colors import LogNorm
-
-    fig, ax = plt.subplots()
-
-    scat = ax.scatter(
-        settlements_df.Long, 
-        settlements_df.Lat, 
-        s=0.1*np.sqrt(settlements_df.population), 
-        c=states[0, :, 1] / states[0, :, :].sum(axis=-1), 
-        cmap="Reds", norm=LogNorm(vmin=1e-4, vmax=0.01), alpha=0.5)
-
-    def animate(i):
-         ax.set_title("{:.2f} years".format(i/26.))
-         scat.set_array(states[i, :, 1] / states[i, :, :].sum(axis=-1))
-         return scat,
-
-    ani = animation.FuncAnimation(fig, animate, frames=states.shape[0]-1, interval=50, blit=False)
-
-    # To save the animation using Pillow as a gif
-    # writer = animation.PillowWriter(fps=15,
-    #                                 metadata=dict(artist='Me'),
-    #                                 bitrate=1800)
-    # ani.save('figures/ew_spatial_animation.gif', writer=writer)
+    # from plotting import plot_animation
+    # ani = plot_animation(
+    #     states, 
+    #     settlements_df.iloc[settlements_slice, :], 
+    #     # 'figures/ew_spatial_animation.gif'
+    # )
 
     plt.show()

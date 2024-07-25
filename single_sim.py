@@ -81,8 +81,10 @@ if __name__ == "__main__":
     init_state = init_state(settlement, params)
     states = simulate(init_state, params, n_steps=biweek_steps)
 
-    from plotting import plot_timeseries, plot_wavelet_spectrum
+    from plotting import plot_timeseries
     plot_timeseries(states)
+    
+    from wavelet import plot_wavelet_spectrum
     plot_wavelet_spectrum(states[:, 1])
 
     import matplotlib.pyplot as plt 
