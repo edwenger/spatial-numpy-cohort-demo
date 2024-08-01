@@ -91,8 +91,9 @@ if __name__ == "__main__":
     init_state = init_state(settlements_df.iloc[settlements_slice, :], params)
     states = simulate(init_state, params, n_steps=biweek_steps)
 
-    # --------
+    # ========
 
+    # Characterize fraction of time with infections present as function of population size:
     # presence_tsteps = (states[:, :, 1] > 0).sum(axis=0)
     # plt.scatter(settlements_df.population[settlements_slice], presence_tsteps / 26.)
     # ax = plt.gca()
@@ -100,6 +101,7 @@ if __name__ == "__main__":
 
     # --------
 
+    # Visualize characteristic time series of single locations:
     # test_ix = 5  # a large city to see some endemic dynamics
     # # test_ix = 200  # a medium city to see some extinction dynamics + frequent reintroductions
     # # test_ix = 800  # a smaller village to see some extinction + random reintroduction dynamics
@@ -113,30 +115,42 @@ if __name__ == "__main__":
 
     # --------
 
-    # TODO: Something like https://www.nature.com/articles/414716a#Sec4 and/or Xia et al. (2004)
-    # https://github.com/krosenfeld-IDM/sandbox-botorch/blob/main/laser/london/analyze.py#L68
+    # Spatial correlations in phase difference:
+    # Emulating https://www.nature.com/articles/414716a#Sec4 and/or Xia et al. (2004)
+    # and https://github.com/krosenfeld-IDM/sandbox-botorch/blob/main/laser/london/analyze.py#L68
 
     from wavelet import get_phase_diffs
     from mixing import pairwise_haversine
     ref_name = "London"
     sdf = settlements_df.iloc[settlements_slice, :]
     ref_ix = sdf.index.get_loc(ref_name)
-    phase_diffs = get_phase_diffs(states[:, :, 1], ref_ix)
+    phase_diffs = get_phase_diffs(
+        states[:, :, 1], ref_ix,
+        period_range=(1.5, 2.5), timestep_range=slice(0*26, 2*26))
     distances_km = pairwise_haversine(sdf)[ref_ix]
 
     fig, ax = plt.subplots()
     ax.scatter(distances_km, phase_diffs, s=0.1*np.sqrt(sdf.population), alpha=0.4, c='gray')
     ax.set(xlabel="distance from %s (km)" % ref_name, ylabel="phase difference (radians)")
 
-    # fig, ax = plt.subplots()
-    # ind = np.where(distances_km < 10)
-    # import pandas as pd
-    # pd.DataFrame(states[:, ind, 1].squeeze()).plot(ax=ax, legend=False, color='gray', alpha=0.1)
-    # ax.set(title="within 10km of London")
+    # Linear fit to phase-difference vs. distance
+    dist_threshold = 60
+    ind = np.where(np.logical_and(distances_km < dist_threshold, distances_km > 0))
+    polyfit1 = np.polyfit(distances_km[ind], phase_diffs[ind], 1)
+    print("slope = %0.4g" % polyfit1[0])
+    ax.plot(distances_km[ind], np.polyval(polyfit1, distances_km[ind]), c='black')
+
+    # Spot-check time series in small region to understand bulk phase-difference features
+    fig, ax = plt.subplots()
+    ind = np.where(distances_km < dist_threshold)
+    import pandas as pd
+    pd.DataFrame(states[:, ind, 1].squeeze()).plot(ax=ax, legend=False, color='gray', alpha=0.1)
+    ax.set(title="within %dkm of London" % dist_threshold, xlabel="time (biweeks)", ylabel="infecteds")
 
 
     # --------
 
+    # Animate spatial dynamics on map:
     # from plotting import plot_animation
     # ani = plot_animation(
     #     states, 
