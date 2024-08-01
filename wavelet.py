@@ -57,8 +57,10 @@ def get_phase_diffs(dat, ref_ix):
         wave, _, _, _, _, _ = get_wavelet_spectrum(dat[:, i])
 
         cross_power = wave * ref_wave.conj()
+
+        # TODO: expose filters as arguments, double-check math
         ind = np.where(np.logical_and(period < 2.5, period > 1.5))
-        phase_diffs[i] = np.angle(np.mean(cross_power[ind]))
+        phase_diffs[i] = np.angle(np.mean(cross_power[ind, 0*26:2*26]))
         
     return phase_diffs
 

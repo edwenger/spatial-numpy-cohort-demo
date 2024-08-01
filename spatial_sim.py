@@ -123,9 +123,17 @@ if __name__ == "__main__":
     ref_ix = sdf.index.get_loc(ref_name)
     phase_diffs = get_phase_diffs(states[:, :, 1], ref_ix)
     distances_km = pairwise_haversine(sdf)[ref_ix]
+
     fig, ax = plt.subplots()
     ax.scatter(distances_km, phase_diffs, s=0.1*np.sqrt(sdf.population), alpha=0.4, c='gray')
     ax.set(xlabel="distance from %s (km)" % ref_name, ylabel="phase difference (radians)")
+
+    # fig, ax = plt.subplots()
+    # ind = np.where(distances_km < 10)
+    # import pandas as pd
+    # pd.DataFrame(states[:, ind, 1].squeeze()).plot(ax=ax, legend=False, color='gray', alpha=0.1)
+    # ax.set(title="within 10km of London")
+
 
     # --------
 
