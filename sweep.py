@@ -4,7 +4,7 @@ from timer import timer
 
 from settlements import parse_settlements
 from single_sim import Params, init_state, simulate
-from plotting import get_max_wavelet_power
+from wavelet import get_max_wavelet_power
 
 
 @timer("sweep", unit="s")
