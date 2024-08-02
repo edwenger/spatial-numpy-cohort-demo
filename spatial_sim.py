@@ -52,6 +52,8 @@ def step_state(state, params, t):
         state[:, 1] += dI
         state[:, 0] -= dI
 
+        assert np.all(state >= 0)  # TODO: verify ordering of updates (recover, infect, birth, death)
+
 
 @timer("simulate", unit="ms")
 def simulate(init_state, params, n_steps):
