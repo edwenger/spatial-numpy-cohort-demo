@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from timer import timer
+from line_profiler import profile
 
 from mixing import init_gravity_diffusion
 
@@ -15,6 +16,7 @@ class Params:
     distance_exponent: float
 
 
+@profile
 def init_state(settlements_df, params):
     
     population_s = settlements_df.population.astype(int)
@@ -43,11 +45,15 @@ def init_state(settlements_df, params):
     return state
 
 
+@profile
 def step_state(state, params, t):
     
-        expected = params.beta * (1 + params.seasonality * np.cos(2*np.pi*t/26.)) * np.matmul(params.mixing, state[:, :, 1].sum(axis=1))
+        infecteds = state[:, :, 1].sum(axis=1)
+        expected = params.beta * (1 + params.seasonality * np.cos(2*np.pi*t/26.)) * np.matmul(params.mixing, infecteds)
         prob = 1 - np.exp(-expected/state.sum(axis=(1, 2)))
-        dI = np.random.binomial(n=state[:, :, 0], p=np.tile(prob, (6, 1)).T)
+        tiled_inf_prob = np.tile(prob, (6, 1)).T
+        susceptibles = state[:, :, 0]
+        dI = np.random.binomial(n=susceptibles, p=tiled_inf_prob)
 
         state[:, :, 2] += state[:, :, 1]
         state[:, :, 1] = 0
@@ -56,7 +62,8 @@ def step_state(state, params, t):
         state[:, :, 0] -= dI
 
         births = np.random.poisson(lam=params.biweek_avg_births)
-        deaths = np.random.binomial(n=state, p=np.tile(params.biweek_death_prob, (3, 6, 1)).T)
+        tiled_death_prob = np.tile(params.biweek_death_prob, (3, 6, 1)).T
+        deaths = np.random.binomial(n=state, p=tiled_death_prob)
 
         state[:, 0, 0] += births
         state -= deaths
@@ -71,6 +78,7 @@ def step_state(state, params, t):
 
 
 @timer("simulate", unit="ms")
+@profile
 def simulate(init_state, params, n_steps):
     
     state_timeseries = np.zeros((n_steps, *init_state.shape), dtype=int)
@@ -111,40 +119,40 @@ if __name__ == "__main__":
     # ========
     # (time, location, age, SIR)
 
-    # collapse spatial dimension for age (or more accurately "birth-year cohort") plotting
-    states_by_age_bin = states.sum(axis=1)
+    # # collapse spatial dimension for age (or more accurately "birth-year cohort") plotting
+    # states_by_age_bin = states.sum(axis=1)
 
-    N_by_age = states_by_age_bin.sum(axis=2)
+    # N_by_age = states_by_age_bin.sum(axis=2)
 
-    fig, axs = plt.subplots(6, 1, figsize=(6, 8), sharex=True)
-    for i, ax in enumerate(axs):
-        ax.plot(N_by_age[:, i])
-        ax.set(ylabel="N", title="age bin=%d" % i)
-    ax.set(xlabel="t (biweeks)")
-    fig.set_tight_layout(True)
+    # fig, axs = plt.subplots(6, 1, figsize=(6, 8), sharex=True)
+    # for i, ax in enumerate(axs):
+    #     ax.plot(N_by_age[:, i])
+    #     ax.set(ylabel="N", title="age bin=%d" % i)
+    # ax.set(xlabel="t (biweeks)")
+    # fig.set_tight_layout(True)
 
-    S_by_age = states_by_age_bin[:, :, 0]
+    # S_by_age = states_by_age_bin[:, :, 0]
 
-    interpolation_factor = np.array([1 - ((t-1)%26)/26. for t in range(26*20)])
-    interpolated_S = list()
-    interpolated_S.append( (S_by_age[:, 0] + interpolation_factor * S_by_age[:, 1]) / (N_by_age[:, 0] + interpolation_factor * N_by_age[:, 1]) )
-    for i in range(1, 4):
-        interpolated_S.append( ((1-interpolation_factor) * S_by_age[:, i] + interpolation_factor * S_by_age[:, i+1]) / ((1-interpolation_factor) * N_by_age[:, i] + interpolation_factor * N_by_age[:, i+1]) )
-    fig, axs = plt.subplots(len(interpolated_S), 1, figsize=(6, 8), sharex=True, sharey=True)
-    for i, ax in enumerate(axs):
-        ax.plot(interpolated_S[i])
-        ax.set(ylabel="S/N (interpolated)", title="age bin=%d" % i)
-    ax.set(xlabel="t (biweeks)")
-    fig.set_tight_layout(True)
+    # interpolation_factor = np.array([1 - ((t-1)%26)/26. for t in range(26*20)])
+    # interpolated_S = list()
+    # interpolated_S.append( (S_by_age[:, 0] + interpolation_factor * S_by_age[:, 1]) / (N_by_age[:, 0] + interpolation_factor * N_by_age[:, 1]) )
+    # for i in range(1, 4):
+    #     interpolated_S.append( ((1-interpolation_factor) * S_by_age[:, i] + interpolation_factor * S_by_age[:, i+1]) / ((1-interpolation_factor) * N_by_age[:, i] + interpolation_factor * N_by_age[:, i+1]) )
+    # fig, axs = plt.subplots(len(interpolated_S), 1, figsize=(6, 8), sharex=True, sharey=True)
+    # for i, ax in enumerate(axs):
+    #     ax.plot(interpolated_S[i])
+    #     ax.set(ylabel="S/N (interpolated)", title="age bin=%d" % i)
+    # ax.set(xlabel="t (biweeks)")
+    # fig.set_tight_layout(True)
 
-    S_by_age = S_by_age / N_by_age  # fraction of population susceptible
+    # S_by_age = S_by_age / N_by_age  # fraction of population susceptible
     
-    fig, axs = plt.subplots(6, 1, figsize=(6, 8), sharex=True, sharey=True)
-    for i, ax in enumerate(axs):
-        ax.plot(S_by_age[:, i])
-        ax.set(ylabel="S/N", title="age bin=%d" % i)
-    ax.set(xlabel="t (biweeks)")
-    fig.set_tight_layout(True)
+    # fig, axs = plt.subplots(6, 1, figsize=(6, 8), sharex=True, sharey=True)
+    # for i, ax in enumerate(axs):
+    #     ax.plot(S_by_age[:, i])
+    #     ax.set(ylabel="S/N", title="age bin=%d" % i)
+    # ax.set(xlabel="t (biweeks)")
+    # fig.set_tight_layout(True)
 
     # ========
 
