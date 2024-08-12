@@ -4,3 +4,9 @@ numpy
 pandas
 pycwt
 timer
+
+panel
+watchfiles
+pygments
+hvplot
+jupyter_bokeh

@@ -26,8 +26,11 @@ def init_state(settlements_df, params):
 
     state = np.array([S, I, N-S-I]).T
 
-    params.biweek_avg_births = params.demog_scale * births_s / 26.
-    params.biweek_death_prob = params.demog_scale * births_s / N / 26.
+    params.population = population_s
+    
+    params.births = births_s
+    params.biweek_avg_births = params.demog_scale * params.births / 26.
+    params.biweek_death_prob = params.demog_scale * params.births / N / 26.
 
     params.mixing = init_gravity_diffusion(settlements_df, params.mixing_scale, params.distance_exponent)
 
