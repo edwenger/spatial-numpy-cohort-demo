@@ -22,7 +22,7 @@ def parse_settlements():
     # print(initial_births.head())
 
     df = locations.join(initial_pops.rename("population")).join(initial_births.rename("births")).sort_values(by="population", ascending=False)
-    print(df.head(25))
+    # print(df.head(25))
 
     return df
 

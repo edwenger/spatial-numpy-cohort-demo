@@ -15,6 +15,18 @@ class Params:
     distance_exponent: float
 
 
+class ModelState(np.ndarray):
+
+    def __new__(cls, input_array, t=0):        
+        obj = np.asarray(input_array).view(cls)
+        obj.t = t
+        return obj
+
+    def __array_finalize__(self, obj):
+        if obj is None: return
+        self.t = getattr(obj, 't', None)
+
+
 def init_state(settlements_df, params):
     
     population_s = settlements_df.population.astype(int)
@@ -24,10 +36,10 @@ def init_state(settlements_df, params):
     S = births_s * 2
     I = (S / 26. / 2.).astype(int)
 
-    state = np.array([S, I, N-S-I]).T
+    state = ModelState([S, I, N-S-I]).T
 
     params.population = population_s
-    
+
     params.births = births_s
     params.biweek_avg_births = params.demog_scale * params.births / 26.
     params.biweek_death_prob = params.demog_scale * params.births / N / 26.
@@ -37,8 +49,10 @@ def init_state(settlements_df, params):
     return state
 
 
-def step_state(state, params, t):
+def step_state(state, params):
     
+        t = state.t
+
         expected = params.beta * (1 + params.seasonality * np.cos(2*np.pi*t/26.)) * np.matmul(params.mixing, state[:, 1])
         prob = 1 - np.exp(-expected/state.sum(axis=1))
         dI = np.random.binomial(n=state[:, 0], p=prob)
@@ -55,6 +69,8 @@ def step_state(state, params, t):
         state[:, 1] += dI
         state[:, 0] -= dI
 
+        state.t += 1
+
         assert np.all(state >= 0)  # TODO: verify ordering of updates (recover, infect, birth, death)
 
 
@@ -65,9 +81,9 @@ def simulate(init_state, params, n_steps):
 
     state = init_state
 
-    for t in range(n_steps):
-        state_timeseries[t, :, :] = state
-        step_state(state, params, t)
+    for i in range(n_steps):
+        state_timeseries[i, :, :] = state
+        step_state(state, params)
     
     return state_timeseries
 
@@ -155,7 +171,7 @@ if __name__ == "__main__":
 
     # --------
 
-    # Animate spatial dynamics on map:
+    # # Animate spatial dynamics on map:
     # from plotting import plot_animation
     # ani = plot_animation(
     #     states, 
