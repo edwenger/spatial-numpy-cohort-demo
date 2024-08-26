@@ -3,3 +3,4 @@ __pycache__
 mlruns.db
 optuna.db
 .ipynb_checkpoints/
+GRID3/

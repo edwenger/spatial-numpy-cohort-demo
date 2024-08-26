@@ -1,20 +1,30 @@
+"""
+panel serve interactive_opv.py --autoreload
+"""
+import os
 from collections import deque
 
+import geopandas as gpd
 import numpy as np
 import panel as pn
 from bokeh import models, plotting
 from bokeh.palettes import Reds256, Oranges256, Blues256, diverging_palette
 
 from mixing import init_gravity_diffusion
-from settlements import parse_settlements
+from settlements import parse_settlements, parse_grid3_settlements
 from spatial_opv_sim import Params, init_state, step_state
 
 PRIMARY_COLOR = "#0072B5"
 SECONDARY_COLOR = "#B54300"
 
+# adm1_names = ["Jigawa", "Kano", "Katsina"]
+adm1_names = ["Sokoto", "Kebbi"]
+
+
 @pn.cache
 def get_data():
-    return parse_settlements()
+    # return parse_settlements()
+    return parse_grid3_settlements(adm1_names)
 
 def reset_params():
 
@@ -101,6 +111,17 @@ source = models.ColumnDataSource(dict(
     reff=params.beta * state[:, 0] / state[:, :].sum(axis=-1),
 ))
 
+path = os.path.join("GRID3", "GRID3_NGA_-_Operational_LGA_Boundaries", "GRID3_NGA_-_Operational_LGA_Boundaries.shp")
+lgas = gpd.read_file(path)
+lgas["geometry"] = lgas["geometry"].to_crs(crs="EPSG:4326")
+lgas = lgas[lgas.statename.isin(adm1_names)]
+# print(lgas.iloc[0])
+geo_source = models.GeoJSONDataSource(
+    geojson=lgas.to_json()
+)
+
+# TODO: geo_source.selected.on_change...
+
 hover = models.HoverTool(tooltips=[
     ("name", "@name"),
     ("population", "@population{0.0 a}"),
@@ -118,6 +139,7 @@ prev_scatter = plotting.figure(
 )
 prev_scatter.add_tools(hover)
 prev_scatter.add_tools("tap", "box_select", "lasso_select")
+prev_scatter.patches('xs', 'ys', source=geo_source, fill_alpha=0.1, fill_color="lightgray", line_color="lightgray", line_width=0.5)
 prev_scatter.scatter(x="x", y="y", size="size", color={"field": "prevalence", "transform": prev_cmap}, source=source, alpha=0.5)
 
 reff_scatter = plotting.figure(
@@ -125,6 +147,7 @@ reff_scatter = plotting.figure(
     title="Effective reproductive number", width=500, height=500,
 )
 reff_scatter.add_tools(hover)
+reff_scatter.patches('xs', 'ys', source=geo_source, fill_alpha=0.1, fill_color="lightgray", line_color="lightgray", line_width=0.5)
 reff_scatter.scatter(x="x", y="y", size="size", color={"field": "reff", "transform": reff_cmap}, source=source, alpha=0.5)
 
 
