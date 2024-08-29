@@ -29,9 +29,9 @@ def get_data():
 def reset_params():
 
     return Params(
-        beta=8, seasonality=0.1, demog_scale=0.65, 
-        mixing_scale=0.001, distance_exponent=1.5,
-        opv_reversion_fraction=0.2, opv_relative_beta=0.2)
+        beta=8, seasonality=0.1, demog_scale=0.8, 
+        mixing_scale=0.003, distance_exponent=1.5,
+        opv_reversion_fraction=0.05, opv_relative_beta=0.3)
 
 def reset_state():
 
@@ -120,15 +120,11 @@ geo_source = models.GeoJSONDataSource(
     geojson=lgas.to_json()
 )
 
-# TODO: geo_source.selected.on_change...
+def lga_selection(attr, old, new):
+    print(new, lgas.iloc[new].lganame.values)
+    # TODO: connect to detailed plotting of summary observation model outputs for settlements in selected LGA
 
-hover = models.HoverTool(tooltips=[
-    ("name", "@name"),
-    ("population", "@population{0.0 a}"),
-    # ("births", "@births"),
-    ("prevalence", "@prevalence{%0.2f}"),
-    ("reff", "@reff"),
-])
+geo_source.selected.on_change('indices', lga_selection)
 
 prev_cmap = models.LogColorMapper(palette=Reds256[::-1], low=1e-4, high=0.01)
 reff_cmap = models.LogColorMapper(palette=diverging_palette(Blues256, Oranges256, n=256), low=0.25, high=4.0)
@@ -137,10 +133,27 @@ prev_scatter = plotting.figure(
     x_axis_label="Longitude", y_axis_label="Latitude",
     title="Prevalence", width=500, height=500,
 )
-prev_scatter.add_tools(hover)
 prev_scatter.add_tools("tap", "box_select", "lasso_select")
-prev_scatter.patches('xs', 'ys', source=geo_source, fill_alpha=0.1, fill_color="lightgray", line_color="lightgray", line_width=0.5)
-prev_scatter.scatter(x="x", y="y", size="size", color={"field": "prevalence", "transform": prev_cmap}, source=source, alpha=0.5)
+points = prev_scatter.scatter(x="x", y="y", size="size", color={"field": "prevalence", "transform": prev_cmap}, source=source, alpha=0.5)
+hover = models.HoverTool(
+    renderers=[points],
+    tooltips=[
+    ("name", "@name"),
+    ("population", "@population{0.0 a}"),
+    # ("births", "@births"),
+    ("prevalence", "@prevalence{%0.2f}"),
+    ("reff", "@reff"),
+])
+prev_scatter.add_tools(hover)
+
+shapes = prev_scatter.patches('xs', 'ys', source=geo_source, fill_alpha=0.1, fill_color="lightgray", line_color="lightgray", line_width=0.5)
+hover2 = models.HoverTool(
+    renderers=[shapes], 
+    tooltips=[
+    ("LGA", "@lganame"),
+    ("State", "@statename"),
+])
+prev_scatter.add_tools(hover2)
 
 reff_scatter = plotting.figure(
     x_axis_label="Longitude", y_axis_label="Latitude",
@@ -184,13 +197,36 @@ def stream():
     ts_source.data = dict(time=list(time_ts_list),
                           prev_WPV=list(prev_WPV_ts_list),
                           prev_OPV=list(prev_OPV_ts_list))
+    
+    if campaigns_per_year > 0 and state.t % (26./campaigns_per_year) < 1:
+        
+        missed = np.random.random(len(params.population)) < (np.log10(params.population) / missed_campaign_log10_pop_threshold)
 
-effective_campaign_coverage = 0.3
+        dI = np.random.binomial(n=state[:, 0], p=effective_campaign_coverage * missed)
+        state[:, 2] += dI
+        state[:, 0] -= dI
+
+
+effective_campaign_coverage = 0.2
 coverage_slider = pn.widgets.FloatSlider(value=effective_campaign_coverage, start=0, end=1, step=0.05, name='effective campaign coverage')
 def on_coverage_change(value):
     global effective_campaign_coverage
     effective_campaign_coverage = value
 bound_coverage = pn.bind(on_coverage_change, value=coverage_slider)
+
+campaigns_per_year = 2
+campaign_frequency_slider = pn.widgets.FloatSlider(value=campaigns_per_year, start=0, end=13, step=1, name='campaigns per year')
+def on_campaign_frequency_change(value):
+    global campaigns_per_year
+    campaigns_per_year = value
+bound_campaign_frequency = pn.bind(on_campaign_frequency_change, value=campaign_frequency_slider)
+
+missed_campaign_log10_pop_threshold = 8
+missed_campaign_pop_threshold_slider = pn.widgets.FloatSlider(value=missed_campaign_log10_pop_threshold, start=1, end=10, step=0.5, name='missed campaign log10(pop) thresh')
+def on_missed_campaign_pop_threshold_change(value):
+    global missed_campaign_log10_pop_threshold
+    missed_campaign_log10_pop_threshold = value
+bound_missed_campaign_pop_threshold = pn.bind(on_missed_campaign_pop_threshold_change, value=missed_campaign_pop_threshold_slider)
 
 callback_period = 100
 callback = pn.state.add_periodic_callback(stream, callback_period)
@@ -202,7 +238,7 @@ bound_speed = pn.bind(on_speed_change, value=speed_slider)
 
 reset_button = pn.widgets.Button(name='Reset', button_type='primary')
 def reset(event):
-    global params, state
+    global params, state, effective_campaign_coverage
     params = reset_params()
     state = reset_state()
     beta_slider.value = params.beta
@@ -249,6 +285,8 @@ sliders = pn.Column(
     pn.Row(opv_reversion_slider, bound_opv_reversion),
     pn.Row(opv_beta_slider, bound_opv_beta),
     pn.Row(coverage_slider, bound_coverage),
+    pn.Row(campaign_frequency_slider, bound_campaign_frequency),
+    pn.Row(missed_campaign_pop_threshold_slider, bound_missed_campaign_pop_threshold),
     "### Playback controls",
     pn.Row(speed_slider, bound_speed),
     pn.Row(reset_button, pause_button),
