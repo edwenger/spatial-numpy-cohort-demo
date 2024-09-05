@@ -1,5 +1,6 @@
 import os
 
+import geopandas as gpd
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import numpy as np
@@ -29,14 +30,25 @@ def parse_settlements():
 
 def parse_grid3_settlements(adm1_names):
 
+    lga_shape_path = os.path.join("GRID3", "GRID3_NGA_-_Operational_LGA_Boundaries", "GRID3_NGA_-_Operational_LGA_Boundaries.shp")
+    lgas = gpd.read_file(lga_shape_path)
+    lgas["geometry"] = lgas["geometry"].to_crs(crs="EPSG:4326")
+    lgas = lgas[lgas.statename.isin(adm1_names)]
+
     df = None
     for adm1_name in adm1_names:
         path = os.path.join("GRID3", "%s_grid3_parsed.csv" % adm1_name.lower())
         tmp_df = pd.read_csv(path, index_col=0)
+        tmp_gdf = gpd.GeoDataFrame(tmp_df, geometry=gpd.points_from_xy(tmp_df['x'], tmp_df['y']), crs="EPSG:4326")
+
+        pointInPoly = gpd.sjoin(lgas, tmp_gdf, predicate='contains').set_index("index_right")
+        tmp_gdf["adm1_name"] = pointInPoly.statename
+        tmp_gdf["adm2_name"] = pointInPoly.lganame
+
         if df is not None:
-            df = pd.concat([df, tmp_df])
+            df = pd.concat([df, tmp_gdf])
         else:
-            df = tmp_df.copy()
+            df = tmp_gdf.copy()
 
     df["births"] = df.under1
     df["Long"] = df.x
@@ -56,7 +68,7 @@ def plot_settlements(df):
 
 if __name__ == '__main__':
 
-    settlements_df = parse_settlements()
-    # settlements_df = parse_grid3_settlements(["Jigawa", "Kano"])
+    # settlements_df = parse_settlements()
+    settlements_df = parse_grid3_settlements(["Jigawa", "Kano"])
     plot_settlements(settlements_df)
     plt.show()

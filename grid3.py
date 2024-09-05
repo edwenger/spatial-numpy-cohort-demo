@@ -46,9 +46,22 @@ if __name__ == "__main__":
     # adm1_names = ["Kano", "Jigawa", "Katsina"]
     adm1_names = ["Sokoto", "Kebbi"]
 
+    lga_shape_path = os.path.join("GRID3", "GRID3_NGA_-_Operational_LGA_Boundaries", "GRID3_NGA_-_Operational_LGA_Boundaries.shp")
+    lgas = gpd.read_file(lga_shape_path)
+    lgas["geometry"] = lgas["geometry"].to_crs(crs="EPSG:4326")
+    lgas = lgas[lgas.statename.isin(adm1_names)]
+
     gdf = None
     for adm1_name in adm1_names:
         tmp_gdf = parse(adm1_name)
+
+        pointInPoly = gpd.sjoin(lgas, tmp_gdf, predicate='contains').set_index("index_right")
+        # print(pointInPoly[["lganame", "adm2_name"]].value_counts().head(30))
+        # print(pointInPoly.loc[14569][["lganame", "adm2_name", "statename", "adm1_name", "population", "under1"]])
+        # print(pointInPoly.head())
+        tmp_gdf["adm1_name"] = pointInPoly.statename
+        tmp_gdf["adm2_name"] = pointInPoly.lganame
+
         if gdf is not None:
             gdf = pd.concat([gdf, tmp_gdf])
         else:

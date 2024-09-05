@@ -2,13 +2,13 @@
 panel serve interactive_opv.py --autoreload
 """
 import os
-from collections import deque
+from itertools import cycle
 
 import geopandas as gpd
 import numpy as np
 import panel as pn
 from bokeh import models, plotting
-from bokeh.palettes import Reds256, Oranges256, Blues256, diverging_palette
+from bokeh.palettes import Reds256, Oranges256, Blues256, diverging_palette, Pastel1
 
 from mixing import init_gravity_diffusion
 from settlements import parse_settlements, parse_grid3_settlements
@@ -17,6 +17,7 @@ from spatial_opv_sim import Params, init_state, step_state
 PRIMARY_COLOR = "#0072B5"
 SECONDARY_COLOR = "#B54300"
 
+# adm1_names = ["Jigawa"]
 # adm1_names = ["Jigawa", "Kano", "Katsina"]
 adm1_names = ["Sokoto", "Kebbi"]
 
@@ -68,7 +69,7 @@ pn.extension(design="material", sizing_mode="stretch_width")
 
 ###
 
-settlements_df = get_data()
+settlements_df = get_data().reset_index()
 # settlements_df = settlements_df.iloc[slice(0, 20), :]  # include only largest few settlements for testing
 
 ###
@@ -104,6 +105,8 @@ source = models.ColumnDataSource(dict(
     name=settlements_df.index,
     x=settlements_df.Long, 
     y=settlements_df.Lat,
+    lganame=settlements_df.adm2_name,
+    statename=settlements_df.adm1_name,
     size=0.03*np.sqrt(settlements_df.population),
     population=settlements_df.population,
     births=settlements_df.births,
@@ -120,9 +123,43 @@ geo_source = models.GeoJSONDataSource(
     geojson=lgas.to_json()
 )
 
+lga_names = settlements_df.adm2_name.dropna().unique()  # TODO: extend to unique (adm1, adm2)
+colors = []
+for _, c in zip(lga_names, cycle(Pastel1[6])):
+    colors.append(c)
+
+lga_ts_source = models.ColumnDataSource(dict(time=[]) | {k: [] for k in lga_names})
+lga_focus_ts = plotting.figure(x_axis_label="Time (years)", y_axis_label="Detected AFP", width=500, height=200,
+                               tools="hover", tooltips="$name: @$name")
+vbars = lga_focus_ts.vbar_stack(lga_names, x='time', width=0.9/26, source=lga_ts_source, 
+                                # legend_label=lga_names, 
+                                color=colors, alpha=0.8)
+lga_focus_ts.visible = False
+# lga_focus_ts.legend.location = "top_left"
+# lga_focus_ts.legend.orientation = "horizontal"
+# lga_focus_ts.legend.label_text_font_size = "6pt"
+
 def lga_selection(attr, old, new):
-    print(new, lgas.iloc[new].lganame.values)
-    # TODO: connect to detailed plotting of summary observation model outputs for settlements in selected LGA
+
+    global callback, vbars
+
+    selected_lgas = lgas.iloc[new].lganame.values
+    indices = settlements_df[settlements_df.adm2_name.isin(selected_lgas)].index
+    source.selected.indices = indices
+
+    for vbar in vbars: 
+        lga_focus_ts.renderers.remove(vbar)
+    vbars = lga_focus_ts.vbar_stack(selected_lgas, x='time', width=0.9/26, source=lga_ts_source, 
+                                    # legend_label=lga_names, 
+                                    color=colors[:len(selected_lgas)], alpha=0.8)
+
+    lga_focus_ts.visible = len(new) > 0
+    callback.running = len(new) == 0
+
+    if len(new) == 1:
+        lga_focus_ts.title.text = "%s, %s" % (lgas.iloc[new].lganame.values[0], lgas.iloc[new].statename.values[0])
+    elif len(new) > 1:
+        lga_focus_ts.title.text = "Multiple selected LGAs (hover for details)"
 
 geo_source.selected.on_change('indices', lga_selection)
 
@@ -143,8 +180,10 @@ hover = models.HoverTool(
     # ("births", "@births"),
     ("prevalence", "@prevalence{%0.2f}"),
     ("reff", "@reff"),
+    ("lga", "@lganame"),
+    ("state", "@statename"),
 ])
-prev_scatter.add_tools(hover)
+# prev_scatter.add_tools(hover)
 
 shapes = prev_scatter.patches('xs', 'ys', source=geo_source, fill_alpha=0.1, fill_color="lightgray", line_color="lightgray", line_width=0.5)
 hover2 = models.HoverTool(
@@ -163,40 +202,37 @@ reff_scatter.add_tools(hover)
 reff_scatter.patches('xs', 'ys', source=geo_source, fill_alpha=0.1, fill_color="lightgray", line_color="lightgray", line_width=0.5)
 reff_scatter.scatter(x="x", y="y", size="size", color={"field": "reff", "transform": reff_cmap}, source=source, alpha=0.5)
 
-
 ts_source = models.ColumnDataSource(dict(
-    time=np.arange(0, 10*26),
-    prev_WPV=np.zeros(10*26),
-    prev_OPV=np.zeros(10*26),
+    time=[],
+    prev_WPV=[],
+    prev_OPV=[],
 ))
 
 prev_ts = plotting.figure(x_axis_label="Time (years)", y_axis_label="Prevalence (%)", width=500, height=200)
 prev_ts.line(x="time", y="prev_WPV", source=ts_source, color="red")
 prev_ts.line(x="time", y="prev_OPV", source=ts_source, color="blue")
-
-time_ts_list = deque()
-prev_WPV_ts_list = deque()
-prev_OPV_ts_list = deque()
+prev_ts.title.text = "Regional total infections"
 
 def stream():
     step_state(state, params)
 
+    new_data = dict(
+        time=[state.t/26.],
+        prev_WPV=[float(100 * state[:, 1].sum() / state[:, :].sum())],  # (prev in %)
+        prev_OPV=[float(100 * state[:, 2].sum() / state[:, :].sum())])
+
+    ts_source.stream(new_data, rollover=260)
+
+    settlements_df["AFP"] = np.random.poisson(lam=state[:, 1]/2000.)
+    afp_by_lga = settlements_df.groupby("adm2_name").AFP.sum()
+
+    # print(afp_by_lga.to_dict())
+
+    lga_ts_source.stream(dict(time=[state.t/26.]) | {k: [afp_by_lga.loc[k]] for k in lga_names}, rollover=26)
+
     prev_scatter.title.text = "Prevalence (year = {:.2f})".format(state.t/26.)
     source.data["prevalence"] = state[:, 1] / state[:, :].sum(axis=-1)
     source.data["reff"] = params.beta * state[:, 0] / state[:, :].sum(axis=-1)
-
-    time_ts_list.append(state.t/26.)
-    prev_WPV_ts_list.append(100 * state[:, 1].sum() / state[:, :].sum())  # (prev in %)
-    prev_OPV_ts_list.append(100 * state[:, 2].sum() / state[:, :].sum())  # (prev in %)
-    # prev_ts_list.append(np.random.poisson(lam=state[:, 1].sum()/2000.))  # (downsampled case counts)
-    # prev_ts_list.append(100 * (state[:, 1] > 0).sum() / len(state[:, 1]))  # (non-zero prevalence %)
-    if len(time_ts_list) > 10*26:
-        time_ts_list.popleft()
-        prev_WPV_ts_list.popleft()
-        prev_OPV_ts_list.popleft()
-    ts_source.data = dict(time=list(time_ts_list),
-                          prev_WPV=list(prev_WPV_ts_list),
-                          prev_OPV=list(prev_OPV_ts_list))
     
     if campaigns_per_year > 0 and state.t % (26./campaigns_per_year) < 1:
         
@@ -251,9 +287,8 @@ def reset(event):
     speed_slider.value = callback_period
     if not callback.running:
         callback.start()
-    time_ts_list.clear()
-    prev_WPV_ts_list.clear()
-    prev_OPV_ts_list.clear()
+    ts_source.data = {k: [] for k in ts_source.data}
+    lga_ts_source.data = {k: [] for k in lga_ts_source.data}
 reset_button.on_click(reset)
 
 pause_button = pn.widgets.Toggle(name='Pause/Resume', value=True)
@@ -297,5 +332,5 @@ pn.template.MaterialTemplate(
     site="OPV Demo",
     title="Interactive Spatial Simulation",
     sidebar=[sliders],
-    main=[pn.Row(prev_scatter, reff_scatter), prev_ts],
+    main=[pn.Row(prev_scatter, reff_scatter), pn.Row(prev_ts, lga_focus_ts)],
 ).servable()
