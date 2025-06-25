@@ -26,21 +26,29 @@ def plot_timeseries(states):
     fig.set_tight_layout(True)
 
 
-def plot_animation(states, settlements_df, save_path=None):
+def plot_animation(states, settlements_df, save_path=None, params=None):
 
-    fig, ax = plt.subplots()
+    fig, axs = plt.subplots(1, 2, figsize=(10, 6), sharex=True, sharey=True)
 
-    scat = ax.scatter(
+    scat_prev = axs[0].scatter(
         settlements_df.Long, 
         settlements_df.Lat, 
         s=0.1*np.sqrt(settlements_df.population), 
         c=states[0, :, 1] / states[0, :, :].sum(axis=-1), 
         cmap="Reds", norm=LogNorm(vmin=1e-4, vmax=0.01), alpha=0.5)
 
+    scat_reff = axs[1].scatter(
+        settlements_df.Long, 
+        settlements_df.Lat, 
+        s=0.1*np.sqrt(settlements_df.population), 
+        c=params.beta * states[0, :, 0] / states[0, :, :].sum(axis=-1),
+        cmap="RdYlBu_r", norm=LogNorm(vmin=0.25, vmax=4.0), alpha=0.5)
+
     def animate(i):
-         ax.set_title("{:.2f} years".format(i/26.))
-         scat.set_array(states[i, :, 1] / states[i, :, :].sum(axis=-1))
-         return scat,
+         axs[0].set_title("{:.2f} years".format(i/26.))
+         scat_prev.set_array(states[i, :, 1] / states[i, :, :].sum(axis=-1))
+         scat_reff.set_array(params.beta * states[i, :, 0] / states[i, :, :].sum(axis=-1))
+         return scat_prev, scat_reff
 
     ani = animation.FuncAnimation(fig, animate, frames=states.shape[0]-1, interval=50, blit=False)
 
